@@ -1,8 +1,6 @@
 import os
 import json
 import nibabel as nib
-import numpy as np
-from nilearn import datasets, image, masking  # Importaciones necesarias
 
 class Recording:
     def __init__(self, nib_img, sampling_period):
@@ -23,14 +21,9 @@ class Patient:
         self.anat: Recording = None
         self.func: Recording = None
 
-
 class PatientLoader:
     def __init__(self):
-        # 1. Traemos el atlas MNI152 oficial de la resolución que queremos.
-        # Al poner res=3, Nilearn nos da una plantilla real de 3x3x3mm geométricamente perfecta.
-        # ¡Esto ocupará muy poca memoria RAM y evitará el MemoryError!
-        mni_dataset = datasets.fetch_icbm152_2009()
-        self.mni_template_3mm = mni_dataset['t1']
+        pass  # Ya no necesitamos cargar ninguna plantilla MNI aquí
 
     def load(self, patient_path):
         patient_name = patient_path.split('/')[-1]
@@ -46,17 +39,8 @@ class PatientLoader:
                 nifti_path = os.path.join(patient_path, scenario, f"{patient_name}_T1w.nii.gz")
             
             raw_nifti = self._load_nifti(nifti_path)
-            
-            # 2. Resampleamos la fMRI y el T1 a la plantilla oficial de 3mm.
-            # El origen geométrico no se moverá y el cerebro saldrá en su sitio.
-            mni_nifti = image.resample_to_img(
-                source_img=raw_nifti,
-                target_img=self.mni_template_3mm,
-                interpolation='linear'
-            )
-            
             sampling_period = self._get_metadata(json_path, 'RepetitionTime')
-            patient.__setattr__(scenario, Recording(mni_nifti, sampling_period))
+            patient.__setattr__(scenario, Recording(raw_nifti, sampling_period))
 
         return patient
 

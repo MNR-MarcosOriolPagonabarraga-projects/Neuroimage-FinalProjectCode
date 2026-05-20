@@ -7,3 +7,6 @@ pandas
 matplotlib
 seaborn
 scikit-learn
+joblib
+PyQt6
+pyvista

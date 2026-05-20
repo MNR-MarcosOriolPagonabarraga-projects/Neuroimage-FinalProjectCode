@@ -72,4 +72,3 @@ class NeuroFeatureExtractor:
             target_affine[:3, i] = (orig_affine[:3, i] / scale_factor) * target_resolution
  
         return target_affine
-    

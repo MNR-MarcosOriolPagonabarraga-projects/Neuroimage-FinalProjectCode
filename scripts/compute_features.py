@@ -31,8 +31,8 @@ def process_single_patient(patient_path, output_dir):
         return f"Failed: {patient_path} | Error: {str(e)}"
 
 if __name__ == "__main__":
-    dataset_dir = "data/" # Point to your root dataset folder
-    output_dir = "data/extracted_features/"
+    dataset_dir = "data/original/"
+    output_dir = "data/processed/"
     os.makedirs(output_dir, exist_ok=True)
 
     # Gather all patient directories
@@ -44,9 +44,8 @@ if __name__ == "__main__":
     print(f"Found {len(patient_paths)} patients. Starting parallel extraction...")
 
     # RUN IN PARALLEL
-    # WARNING: See the RAM note below about setting n_jobs
     results = Parallel(n_jobs=4, verbose=10)(
-        delayed(process_single_patient)(path, output_dir) for path in patient_paths
+        delayed(    )(path, output_dir) for path in patient_paths
     )
     
     print("Batch processing complete!")

@@ -19,7 +19,10 @@ class NeuroFeatureExtractor:
             labels_img=self.atlas.maps,
             resampling_target="data", # Forces data to resample to the atlas's space
             standardize='zscore',
-            smoothing_fwhm=5,           # Applies 5mm smoothing directly
+            smoothing_fwhm=5,           # Applies 5mm smoothing
+            detrend=True,
+            high_pass=0.01,
+            t_r=2.0,
             memory='nilearn_cache',     # Caches allocations
             memory_level=1
         )

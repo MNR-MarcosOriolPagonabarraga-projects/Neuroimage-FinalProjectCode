@@ -1,5 +1,6 @@
 from nilearn.maskers import NiftiLabelsMasker
 from nilearn import image, datasets
+from nilearn.connectome import ConnectivityMeasure
 import numpy as np
 
 class NeuroFeatureExtractor:
@@ -19,10 +20,7 @@ class NeuroFeatureExtractor:
             labels_img=self.atlas.maps,
             resampling_target="data", # Forces data to resample to the atlas's space
             standardize='zscore',
-            smoothing_fwhm=5,           # Applies 5mm smoothing
-            detrend=True,
-            high_pass=0.01,
-            t_r=2.0,
+            smoothing_fwhm=5,           # Applies 5mm smoothing directly
             memory='nilearn_cache',     # Caches allocations
             memory_level=1
         )
@@ -45,14 +43,38 @@ class NeuroFeatureExtractor:
         time_series = self.masker.fit_transform(resampled_img)
         return time_series
 
-    def extract_functional_connectivity(self, time_series):
+   
+    def extract_functional_connectivity(self, recording):
         """
-        Future expansion feature: Computes a functional correlation matrix 
-        from the extracted time-series data.
-        Output shape: (Number of ROIs, Number of ROIs) -> e.g., (200, 200)
+        Computes a functional correlation matrix from the extracted time-series data.
+        Output shape: Guaranteed consistent dimensions.
         """
-        # Calculate the Pearson product-moment correlation coefficients
-        connectivity_matrix = np.corrcoef(time_series.T)
+        
+        atlas = datasets.fetch_atlas_harvard_oxford('cort-maxprob-thr25-2mm', symmetric_split=True)
+
+        labels_masker = NiftiLabelsMasker(
+            labels_img=atlas.maps, #atlas sin ajustar al cerebro
+            standardize="zscore",      
+            detrend=True,
+            low_pass=0.1,
+            high_pass=0.01,
+            t_r=recording.func.sampling_period,
+            memory="nilearn_cache",
+            memory_level=1,
+            verbose=1,
+            resampling_target='labels', #de aqui para abajo son cosas para que lla matriz siempre tenga el mismo tamaño
+            keep_masked_labels=True)
+
+        region_time_series = labels_masker.fit_transform(recording.func.img)
+
+        connectivity_measure = ConnectivityMeasure(
+            kind='correlation', 
+            standardize="zscore"
+        )
+
+        connectivity_matrices = connectivity_measure.fit_transform([region_time_series])
+        connectivity_matrix = connectivity_matrices[0]
+        
         return connectivity_matrix
 
 
@@ -61,11 +83,9 @@ class NeuroFeatureExtractor:
         Computes a single, standardized MNI grid configuration 
         scaled to the chosen voxel resolution.
         """
-        # Load the standard 1mm reference template once to extract standard MNI orientation
         mni_template = datasets.load_mni152_template()
         orig_affine = mni_template.affine
         
-        # Scale the directional vectors by your target resolution
         target_affine = np.copy(orig_affine)
         for i in range(3):
             scale_factor = np.linalg.norm(orig_affine[:3, i])

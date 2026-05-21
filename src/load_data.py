@@ -1,11 +1,12 @@
 import os
 import json
 import nibabel as nib
+import numpy as np
 
 class Recording:
     def __init__(self, nib_img, sampling_period):
-        self.sampling_period: float = sampling_period
-        self.img = nib_img  
+        self.sampling_period : float = sampling_period
+        self.img = nib_img  # Store Nifti1Image object
     
     @property
     def data(self):
@@ -16,15 +17,17 @@ class Recording:
         return self.img.affine
     
 class Patient:
-    def __init__(self):
-        self.name: str = None
-        self.anat: Recording = None
-        self.func: Recording = None
+    name : str = None
+    anat : Recording = None
+    func : Recording = None
+
 
 class PatientLoader:
-    def __init__(self):
-        pass  # Ya no necesitamos cargar ninguna plantilla MNI aquí
-
+    """
+    Loads patient data from a given path. Expects a specific directory structure and file naming convention.
+    Methods:
+        - load(patient_path): Loads the anatomical and functional data for a patient from the specified path
+    """
     def load(self, patient_path):
         patient_name = patient_path.split('/')[-1]
         patient = Patient()
@@ -37,10 +40,9 @@ class PatientLoader:
             else:
                 json_path = os.path.join(patient_path, scenario, f"{patient_name}_T1w.json")
                 nifti_path = os.path.join(patient_path, scenario, f"{patient_name}_T1w.nii.gz")
-            
-            raw_nifti = self._load_nifti(nifti_path)
+            data = self._load_nifti(nifti_path)
             sampling_period = self._get_metadata(json_path, 'RepetitionTime')
-            patient.__setattr__(scenario, Recording(raw_nifti, sampling_period))
+            patient.__setattr__(scenario, Recording(data, sampling_period))
 
         return patient
 
@@ -50,4 +52,5 @@ class PatientLoader:
     def _get_metadata(self, json_path, key):
         with open(json_path, 'r') as f:
             js = json.load(f)
+        
         return js[key]

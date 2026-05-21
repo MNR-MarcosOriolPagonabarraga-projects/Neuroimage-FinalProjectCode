@@ -2,6 +2,8 @@ from nilearn.maskers import NiftiLabelsMasker
 from nilearn import image, datasets
 from nilearn.connectome import ConnectivityMeasure
 import numpy as np
+import matplotlib.pyplot as plt
+from nilearn import plotting
 
 class NeuroFeatureExtractor:
     def __init__(self, target_resolution=3, n_rois=200, yeo_networks=7):
@@ -44,7 +46,7 @@ class NeuroFeatureExtractor:
         return time_series
 
    
-    def extract_functional_connectivity(self, recording):
+    def extract_functional_connectivity(self, recording, we_plot = False):
         """
         Computes a functional correlation matrix from the extracted time-series data.
         Output shape: Guaranteed consistent dimensions.
@@ -61,7 +63,7 @@ class NeuroFeatureExtractor:
             t_r=recording.func.sampling_period,
             memory="nilearn_cache",
             memory_level=1,
-            verbose=1,
+            verbose=0,
             resampling_target='labels', #de aqui para abajo son cosas para que lla matriz siempre tenga el mismo tamaño
             keep_masked_labels=True)
 
@@ -74,6 +76,36 @@ class NeuroFeatureExtractor:
 
         connectivity_matrices = connectivity_measure.fit_transform([region_time_series])
         connectivity_matrix = connectivity_matrices[0]
+
+        if we_plot == True:
+            # Hacemos una copia y ponemos la diagonal a 0 para que no tape los contrastes reales
+            plot_matrix = connectivity_matrix.copy()
+            np.fill_diagonal(plot_matrix, 0)
+            
+            # Creamos el lienzo GIGANTE en Matplotlib para dar espacio a los nombres
+            fig, ax = plt.subplots(figsize=(26, 26))
+            
+            # Pintamos la matriz (Quitamos fontsize de aquí para corregir el AttributeError)
+            plotting.plot_matrix(
+                plot_matrix,
+                labels=atlas.labels[1:], # Tus etiquetas originales completas sin el fondo
+                cmap='RdBu_r',           # Paleta Rojo-Azul
+                vmax=0.5,                # Saturamos el color a 0.5 para hiper-contraste
+                vmin=-0.5,
+                colorbar=True,
+                reorder='average',       # Clustering jerárquico para agrupar las redes funcionales
+                axes=ax              
+            )
+            
+            # --- CONTROL TOTAL DEL TEXTO CON MATPLOTLIB ---
+            # Modificamos el tamaño de letra (size=6) directamente sobre los ejes de Matplotlib
+            ax.tick_params(axis='both', labelsize=6)
+            
+            # Rotamos las etiquetas del eje X para lectura vertical perfecta sin que se pisen
+            plt.xticks(rotation=90)
+            
+            plt.tight_layout()
+            plt.show()
         
         return connectivity_matrix
 

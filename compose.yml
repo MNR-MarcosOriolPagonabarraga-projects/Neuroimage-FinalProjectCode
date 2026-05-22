@@ -1,0 +1,10 @@
+services:
+  dev_env:
+    image: neuro_project:latest
+    network_mode: host
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+      - "8888:8888" # Add this for Jupyter
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root

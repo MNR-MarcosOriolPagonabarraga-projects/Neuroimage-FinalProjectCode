@@ -1,5 +1,6 @@
 import os
 import json
+import numpy as np
 import nibabel as nib
 
 class Recording:
@@ -51,3 +52,21 @@ class PatientLoader:
         with open(json_path, 'r') as f:
             js = json.load(f)
         return js[key]
+    
+class ProcessedDataLoader:
+    def __init__(self, processed_data_path):
+        self.data_path = processed_data_path
+
+    def load(self):
+        """Load ``sub-*_features.npz`` bundles written by ``scripts/compute_features.py``."""
+        data = []
+        for name in sorted(os.listdir(self.data_path)):
+            if not name.endswith("_features.npz"):
+                continue
+            file_path = os.path.join(self.data_path, name)
+            if not os.path.isfile(file_path):
+                continue
+            with np.load(file_path, allow_pickle=False) as z:
+                data.append({key: np.array(z[key]) for key in z.files})
+
+        return data

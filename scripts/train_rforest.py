@@ -48,8 +48,8 @@ def main():
     # Entrenar Random Forest
     # n_estimators=500 y max_depth controlado ayudan a combatir el overfitting típico de fMRI
     clf = RandomForestClassifier(
-        n_estimators=500, 
-        max_depth=10, 
+        n_estimators=100, 
+        max_depth=16, 
         min_samples_split=5,
         random_state=RNG_SEED, 
         n_jobs=-1,

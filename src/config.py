@@ -1,0 +1,3 @@
+
+CHUNK_LENGTH = 60
+STRIDE = 10 

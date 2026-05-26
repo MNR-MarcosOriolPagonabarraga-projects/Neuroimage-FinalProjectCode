@@ -4,9 +4,8 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from src.config import CHUNK_LENGTH
 
-# TR ≈ 3 s ⇒ 5 min ~= 100 frames.
-CHUNK_LENGTH = 100
 
 
 @dataclass(frozen=True)

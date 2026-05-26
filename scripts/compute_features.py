@@ -13,6 +13,7 @@ from rich.progress import Progress
 
 from src.load_data import PatientLoader
 from src.process import NeuroFeatureExtractor
+from src.config import CHUNK_LENGTH, STRIDE
 
 DEFAULT_DATASET_DIR = "data/original"
 DEFAULT_PROCESSED_DIR = "data/processed"
@@ -22,10 +23,6 @@ DEFAULT_N_JOBS = 6
 GROUP_PLOT_NAME = "mean_functional_connectivity_groups.png"
 
 FEATURES_ARCHIVE_SUFFIX = "_features.npz"
-
-# --- Parámetros de Sliding Window ---
-WINDOW_SIZE = 60  # Frames por ventana (ej. 3 mins a TR=3s)
-STRIDE = 10       # Solapamiento: avanza 10 frames (30 segundos) en cada paso
 
 # Derived from participant ID (`sub-{id}`): grupo 1 (IDs starting with 1) vs grupo 2 (starting with 2).
 LABEL_YOUNG = 0
@@ -60,10 +57,7 @@ def process_single_patient(
 
         try:
             recording = loader.load(patient_path)
-            # Extraer la serie temporal completa del paciente
             full_time_series = extractor.extract_time_series(recording)
-            
-            # Calcular la matriz de conectividad GLOBAL (solo para el plot de medias)
             global_corr_matrix = extractor.extract_functional_connectivity(full_time_series)
 
             subject_key = patient_folder.split("-", 1)[1]
@@ -72,20 +66,15 @@ def process_single_patient(
 
             n_frames = full_time_series.shape[0]
             
-            # --- Lógica de Sliding Window ---
             window_idx = 0
-            # Asegurarse de que hay suficientes frames para al menos una ventana
-            if n_frames >= WINDOW_SIZE:
-                for start_frame in range(0, n_frames - WINDOW_SIZE + 1, STRIDE):
-                    end_frame = start_frame + WINDOW_SIZE
+            if n_frames >= CHUNK_LENGTH:
+                # Iterate through the available windows per recording and calculate the window connectivity
+                for start_frame in range(0, n_frames - CHUNK_LENGTH + 1, STRIDE):
+                    end_frame = start_frame + CHUNK_LENGTH
                     
-                    # 1. Recortar las activaciones temporales a la ventana actual
                     window_time_series = full_time_series[start_frame:end_frame, :]
-                    
-                    # 2. Calcular la matriz de correlación ESPECÍFICA para esta ventana
                     window_corr_matrix = extractor.extract_functional_connectivity(window_time_series)
                     
-                    # 3. Guardar el archivo npz individual para esta ventana
                     archive_path = os.path.join(
                         processed_output_dir, 
                         f"{basename}_win-{window_idx:03d}{FEATURES_ARCHIVE_SUFFIX}"
@@ -101,7 +90,7 @@ def process_single_patient(
                     window_idx += 1
             else:
                 # Si la serie es más corta que la ventana, la saltamos o la procesamos entera (opcional)
-                raise ValueError(f"La serie temporal tiene solo {n_frames} frames, se requieren {WINDOW_SIZE}.")
+                raise ValueError(f"La serie temporal tiene solo {n_frames} frames, se requieren {CHUNK_LENGTH}.")
 
             # Devolvemos la matriz global para que la visualización final siga funcionando
             return subject_key, global_corr_matrix

@@ -1,49 +1,36 @@
-"""
-Modelos para rs-fMRI:
-- fMRIGCN: Graph Convolutional Network. Usa la matriz de correlación como 
-  grafo (adyacencia) y las activaciones temporales como características de nodo.
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.fmri_dataset import CHUNK_LENGTH as N_TIME
-
-def _upper_triangle_vector(corr: torch.Tensor) -> torch.Tensor:
-    """Extrae el triángulo superior de la matriz de correlación."""
-    _, _, r, _ = corr.shape
-    idx = torch.triu_indices(r, r, offset=1, device=corr.device)
-    return corr[:, 0, idx[0], idx[1]]
-
 class DenseGCNLayer(nn.Module):
-    """Capa GCN para grafos densos (como matrices de correlación fMRI)."""
-    def __init__(self, in_features: int, out_features: int, dropout: float = 0.1):
+    """
+    A single Graph Convolutional Layer designed for dense adjacency matrices.
+    Features are propagated as out = Adj * X * W.
+    """
+    def __init__(self, in_features: int, out_features: int, dropout: float = 0.15):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features)
         self.dropout = nn.Dropout(dropout)
         self.act = nn.GELU()
 
     def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
-        # x: (Batch, ROIs, Features)
+        # x: (Batch, ROIs, In_Features)
         # adj: (Batch, ROIs, ROIs)
-        
-        # Transformación de características
-        support = self.linear(x) 
-        
-        # Multiplicación por la matriz de adyacencia (Graph convolution)
-        # A * X * W
+        support = self.linear(x)
         out = torch.bmm(adj, support)
         return self.dropout(self.act(out))
 
+
 class fMRIGCN(nn.Module):
     """
-    GCN que integra series temporales y topología de red.
+    Spatio-Temporal GCN for resting-state fMRI classification.
+    Uses functional connectivity as graph edges and BOLD signals as node features.
     """
-    def __init__(self, n_rois: int, n_time: int = N_TIME, hidden_dim: int = 64, dropout: float = 0.15):
+    def __init__(self, n_rois: int, n_time: int = 60, hidden_dim: int = 128, dropout: float = 0.15):
         super().__init__()
         self.n_rois = n_rois
         
+        # Temporal feature embedding per ROI
         self.temporal_mlp = nn.Sequential(
             nn.Linear(n_time, hidden_dim),
             nn.LayerNorm(hidden_dim),
@@ -51,40 +38,51 @@ class fMRIGCN(nn.Module):
             nn.Dropout(dropout)
         )
         
-        # Capas GCN
+        # Graph convolution layers
         self.gcn1 = DenseGCNLayer(hidden_dim, hidden_dim, dropout)
         self.gcn2 = DenseGCNLayer(hidden_dim, hidden_dim, dropout)
         
-        # Clasificador final (Global Average Pooling sobre los nodos)
+        # Readout and classification head
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim, 32),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(32, 2) # 2 clases: Jóvenes vs Adultos
+            nn.Linear(32, 2)
         )
 
     def forward(self, activation: torch.Tensor, corr: torch.Tensor) -> torch.Tensor:
-        # activation: (B, 1, Time, ROIs) -> Convertir a (B, ROIs, Time)
+        # activation: (B, 1, Time, ROIs) -> (B, ROIs, Time)
         x = activation.squeeze(1).permute(0, 2, 1)
         
-        # corr: (B, 1, ROIs, ROIs) -> Convertir a (B, ROIs, ROIs)
+        # 1. Local Node Feature Normalization (Z-score along time dimension)
+        x_mean = x.mean(dim=-1, keepdim=True)
+        x_std = x.std(dim=-1, keepdim=True) + 1e-5
+        x = (x - x_mean) / x_std
+        
+        # 2. Graph Adjacency Matrix Preprocessing
         adj = corr.squeeze(1)
+        adj = F.relu(adj)  # Retain positive synchronous correlations
+        adj = torch.where(adj > 0.15, adj, torch.zeros_like(adj))  # Sparsification threshold
         
-        # Normalizar adyacencia (opcional pero recomendado: usar valor absoluto)
-        # En fMRI, las anticorrelaciones también contienen info, pero a nivel de grafo
-        # los pesos negativos pueden desestabilizar. Pasamos a absoluto y sumamos la identidad.
-        adj = torch.abs(adj)
+        # Add self-loops to preserve central node identities
         eye = torch.eye(self.n_rois, device=adj.device).unsqueeze(0).expand_as(adj)
-        adj = adj + eye # Self-loops asegurados
+        adj = adj + eye
         
-        # Extraer características temporales
-        x = self.temporal_mlp(x) # (B, ROIs, Hidden)
+        # Symmetric Degree Normalization: D^(-1/2) * A * D^(-1/2)
+        degree = adj.sum(dim=-1)
+        d_inv_sqrt = torch.pow(degree, -0.5)
+        d_inv_sqrt = torch.where(torch.isinf(d_inv_sqrt), torch.zeros_like(d_inv_sqrt), d_inv_sqrt)
+        d_mat = torch.diag_embed(d_inv_sqrt)
+        adj_norm = torch.bmm(torch.bmm(d_mat, adj), d_mat)
         
-        # Pasar por las GCN
-        x = self.gcn1(x, adj)
-        x = self.gcn2(x, adj)
+        # 3. Message Passing & Feature Propagation
+        x_base = self.temporal_mlp(x)
+        x_gcn = self.gcn1(x_base, adj_norm)
+        x_gcn = self.gcn2(x_gcn, adj_norm)
         
-        # Pooling global sobre los ROIs (Nodos)
-        x_pooled = x.mean(dim=1) # (B, Hidden)
+        # Residual skip connection to prevent signal over-smoothing
+        x_out = x_base + x_gcn
         
+        # 4. Global Average Pooling over ROIs and Classification
+        x_pooled = x_out.mean(dim=1)
         return self.classifier(x_pooled)
